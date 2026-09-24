@@ -49,6 +49,8 @@ struct UnlockView: View {
     @State private var password = ""
     @State private var error = ""
     @State private var restoring = false
+    @State private var restoreURL: URL?
+    @State private var showRestorePassword = false
 
     var body: some View {
         NavigationStack {
@@ -63,9 +65,20 @@ struct UnlockView: View {
             }
             .navigationTitle("Vault Locked")
             .fileImporter(isPresented: $restoring, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
-                if case .success(let urls) = result, let url = urls.first {
-                    do { try vault.restoreEncryptedBackup(from: url) }
-                    catch { error = "Restore failed: \(error.localizedDescription)" }
+                switch result {
+                case .success(let urls):
+                    if let url = urls.first {
+                        restoreURL = url
+                        password = ""
+                        showRestorePassword = true
+                    }
+                case .failure(let importError):
+                    error = "Unable to select backup: \(importError.localizedDescription)"
+                }
+            }
+            .sheet(isPresented: $showRestorePassword) {
+                if let restoreURL {
+                    RestoreBackupView(backupURL: restoreURL)
                 }
             }
         }
@@ -198,4 +211,62 @@ struct ShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+struct RestoreBackupView: View {
+    @EnvironmentObject var vault: VaultStore
+    @Environment(\.dismiss) private var dismiss
+
+    let backupURL: URL
+
+    @State private var password = ""
+    @State private var error = ""
+    @State private var isRestoring = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Restore Encrypted Backup") {
+                    SecureField("Backup master password", text: $password)
+                }
+
+                Text("Enter the master password that was active when this backup was created. The backup will be verified before your current vault is replaced.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                if !error.isEmpty {
+                    Text(error)
+                        .foregroundStyle(.red)
+                }
+
+                Button("Verify and Restore") {
+                    isRestoring = true
+                    error = ""
+
+                    do {
+                        try vault.restoreEncryptedBackup(
+                            from: backupURL,
+                            password: password
+                        )
+                        password = ""
+                        dismiss()
+                    } catch {
+                        self.error = "Restore failed. Check the password and backup file."
+                    }
+
+                    isRestoring = false
+                }
+                .disabled(password.isEmpty || isRestoring)
+            }
+            .navigationTitle("Restore Backup")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        password = ""
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
 }

@@ -138,23 +138,101 @@ final class VaultStore: ObservableObject {
         return out
     }
 
-    func restoreEncryptedBackup(from url: URL) throws {
+    func restoreEncryptedBackup(from url: URL, password: String) throws {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
-        let backup = try JSONDecoder().decode(VaultBackup.self, from: Data(contentsOf: url))
-        guard backup.version == 1 else { throw userError("Unsupported backup version.") }
 
-        let staging = baseURL.deletingLastPathComponent().appendingPathComponent("PrivateVault-Restore-\(UUID().uuidString)", isDirectory: true)
-        let stagingBlobs = staging.appendingPathComponent("blobs", isDirectory: true)
-        try fm.createDirectory(at: stagingBlobs, withIntermediateDirectories: true)
-        try protectedWrite(JSONEncoder().encode(backup.header), to: staging.appendingPathComponent("header.json"))
-        try protectedWrite(backup.encryptedManifest, to: staging.appendingPathComponent("manifest.enc"))
-        for blob in backup.blobs {
-            try protectedWrite(blob.ciphertext, to: stagingBlobs.appendingPathComponent(blob.storedName))
+        let backup = try JSONDecoder().decode(
+            VaultBackup.self,
+            from: Data(contentsOf: url)
+        )
+        guard backup.version == 1 else {
+            throw userError("Unsupported backup version.")
         }
 
-        let old = baseURL.deletingLastPathComponent().appendingPathComponent("PrivateVault-Old-\(UUID().uuidString)", isDirectory: true)
-        if fm.fileExists(atPath: baseURL.path) { try fm.moveItem(at: baseURL, to: old) }
+        // Validate the backup and password BEFORE replacing the current vault.
+        let passwordKey = try CryptoService.deriveKey(
+            password: password,
+            salt: backup.header.salt,
+            iterations: backup.header.iterations
+        )
+        let rawVaultKey = try CryptoService.open(
+            backup.header.wrappedVaultKey,
+            using: passwordKey
+        )
+        let backupVaultKey = SymmetricKey(data: rawVaultKey)
+        let plainManifest = try CryptoService.open(
+            backup.encryptedManifest,
+            using: backupVaultKey
+        )
+        let manifest = try JSONDecoder().decode(
+            VaultManifest.self,
+            from: plainManifest
+        )
+
+        guard manifest.version == 2 else {
+            throw userError("Unsupported vault version.")
+        }
+
+        let expectedBlobs = Set(manifest.items.map(\.storedName))
+        let suppliedBlobs = Set(backup.blobs.map(\.storedName))
+
+        guard expectedBlobs == suppliedBlobs,
+              expectedBlobs.count == backup.blobs.count else {
+            throw userError("Backup is incomplete or malformed.")
+        }
+
+        let staging = baseURL.deletingLastPathComponent()
+            .appendingPathComponent(
+                "PrivateVault-Restore-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        let stagingBlobs = staging.appendingPathComponent(
+            "blobs",
+            isDirectory: true
+        )
+
+        try fm.createDirectory(
+            at: stagingBlobs,
+            withIntermediateDirectories: true
+        )
+
+        do {
+            try protectedWrite(
+                JSONEncoder().encode(backup.header),
+                to: staging.appendingPathComponent("header.json")
+            )
+            try protectedWrite(
+                backup.encryptedManifest,
+                to: staging.appendingPathComponent("manifest.enc")
+            )
+
+            for blob in backup.blobs {
+                // Verify every encrypted file before installing the backup.
+                _ = try CryptoService.open(
+                    blob.ciphertext,
+                    using: backupVaultKey
+                )
+                try protectedWrite(
+                    blob.ciphertext,
+                    to: stagingBlobs.appendingPathComponent(blob.storedName)
+                )
+            }
+        } catch {
+            try? fm.removeItem(at: staging)
+            throw error
+        }
+
+        let old = baseURL.deletingLastPathComponent()
+            .appendingPathComponent(
+                "PrivateVault-Old-\(UUID().uuidString)",
+                isDirectory: true
+            )
+
+        if fm.fileExists(atPath: baseURL.path) {
+            try fm.moveItem(at: baseURL, to: old)
+        }
+
         do {
             try fm.moveItem(at: staging, to: baseURL)
             try? fm.removeItem(at: old)
@@ -162,7 +240,11 @@ final class VaultStore: ObservableObject {
             isConfigured = true
         } catch {
             try? fm.removeItem(at: baseURL)
-            if fm.fileExists(atPath: old.path) { try? fm.moveItem(at: old, to: baseURL) }
+
+            if fm.fileExists(atPath: old.path) {
+                try? fm.moveItem(at: old, to: baseURL)
+            }
+
             throw error
         }
     }
