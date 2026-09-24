@@ -109,8 +109,15 @@ struct VaultView: View {
                                 }
                             }
                             .swipeActions {
-                                Button(role: .destructive) { try? vault.delete(item) }
-                                label: { Label("Delete", systemImage: "trash") }
+                                Button(role: .destructive) {
+                                    do {
+                                        try vault.delete(item)
+                                    } catch {
+                                        vault.errorMessage = "Delete failed: \(error.localizedDescription)"
+                                    }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                     }
@@ -137,7 +144,14 @@ struct VaultView: View {
             .quickLookPreview($previewURL)
             .alert("New Folder", isPresented: $showNewFolder) {
                 TextField("Folder name", text: $newFolder)
-                Button("Create") { try? vault.addFolder(name: newFolder); newFolder = "" }
+                Button("Create") {
+                    do {
+                        try vault.addFolder(name: newFolder)
+                        newFolder = ""
+                    } catch {
+                        vault.errorMessage = "Unable to create folder: \(error.localizedDescription)"
+                    }
+                }
                 Button("Cancel", role: .cancel) {}
             }
             .sheet(isPresented: $showShare) {

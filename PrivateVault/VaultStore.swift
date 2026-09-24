@@ -116,7 +116,10 @@ final class VaultStore: ObservableObject {
     }
 
     func delete(_ item: VaultItem) throws {
-        try? fm.removeItem(at: blobsURL.appendingPathComponent(item.storedName))
+        let blobURL = blobsURL.appendingPathComponent(item.storedName)
+        if fm.fileExists(atPath: blobURL.path) {
+            try fm.removeItem(at: blobURL)
+        }
         items.removeAll { $0.id == item.id }
         try saveManifest()
     }
