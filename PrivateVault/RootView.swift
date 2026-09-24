@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import QuickLook
+import UIKit
 
 extension UTType {
     static var privateVaultBackup: UTType { UTType(exportedAs: "com.privatevault.backup") }
