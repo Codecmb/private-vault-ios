@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import CommonCrypto
+import Security
 
 enum VaultCryptoError: Error {
     case invalidPassword
