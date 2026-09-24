@@ -26,3 +26,18 @@ Recommended:
 - Keep all actual vault data out of Git/GitHub.
 
 The repository should contain source code only.
+
+
+## v2 additions
+- User-created folders in encrypted metadata.
+- Change master password by re-wrapping the random vault key.
+- Export a portable encrypted `.pvault` backup.
+- Restore an encrypted backup using staged replacement.
+- Purge temporary decrypted previews on app launch, lock, and background.
+- Share sheet allows saving the encrypted backup to Files/external storage.
+
+## Still intentionally pending
+- Face ID convenience unlock.
+- Full Xcode compile/device QA.
+- Independent security review.
+- Large-file streaming encryption (current prototype reads a whole imported file into memory).

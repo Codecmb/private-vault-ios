@@ -1,0 +1,15 @@
+# Xcode
+.DS_Store
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.build/
+
+# Never commit vault material
+*.pvault
+*.blob
+header.json
+manifest.enc
+PrivateVaultData/
+VaultData/
+Backups/
